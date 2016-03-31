@@ -65,7 +65,7 @@ def get_asset_version(settings):
 # Options which must get extracted into Django settings while
 # bootstrapping. Everything else will get validated and used
 # as a part of OptionsManager.
-options_mapper = {
+writeback_options_mapper = {
     # 'cache.backend': 'SENTRY_CACHE',
     # 'cache.options': 'SENTRY_CACHE_OPTIONS',
     # 'system.databases': 'DATABASES',
@@ -79,6 +79,12 @@ options_mapper = {
     'mail.use-tls': 'EMAIL_USE_TLS',
     'mail.from': 'SERVER_EMAIL',
     'mail.subject-prefix': 'EMAIL_SUBJECT_PREFIX',
+}
+
+forward_options_mapper = {
+    'system.admin-email': 'SENTRY_ADMIN_EMAIL',
+    'system.url-prefix': 'SENTRY_URL_PREFIX',
+    'system.rate-limit': 'SENTRY_SYSTEM_MAX_EVENTS_PER_MINUTE',
 }
 
 
@@ -128,11 +134,11 @@ def bootstrap_options(settings, config=None):
     from sentry.conf.server import DEAD
 
     # First move options from settings into options
-    for k, v in options_mapper.iteritems():
+    for k, v in writeback_options_mapper.iteritems():
         if getattr(settings, v, DEAD) is not DEAD and k not in options:
             warnings.warn(
                 DeprecatedSettingWarning(
-                    options_mapper[k],
+                    writeback_options_mapper[k],
                     "SENTRY_OPTIONS['%s']" % k,
                 )
             )
@@ -148,9 +154,9 @@ def bootstrap_options(settings, config=None):
     # only in SENTRY_OPTIONS and no config.yml file
     for o in (settings.SENTRY_DEFAULT_OPTIONS, settings.SENTRY_OPTIONS):
         for k, v in o.iteritems():
-            if k in options_mapper:
+            if k in writeback_options_mapper:
                 # Escalate the few needed to actually get the app bootstrapped into settings
-                setattr(settings, options_mapper[k], v)
+                setattr(settings, writeback_options_mapper[k], v)
 
 
 def initialize_app(config, skip_backend_validation=False):
@@ -275,15 +281,11 @@ def apply_legacy_settings(settings):
         )
         settings.CELERY_ALWAYS_EAGER = (not settings.SENTRY_USE_QUEUE)
 
-    for old, new in (
-        ('SENTRY_ADMIN_EMAIL', 'system.admin-email'),
-        ('SENTRY_URL_PREFIX', 'system.url-prefix'),
-        ('SENTRY_SYSTEM_MAX_EVENTS_PER_MINUTE', 'system.rate-limit'),
-    ):
-        if new not in settings.SENTRY_OPTIONS and hasattr(settings, old):
+    for configuration_key, setting_name in forward_options_mapper.iteritems():
+        if configuration_key not in settings.SENTRY_OPTIONS and hasattr(settings, setting_name):
             warnings.warn(
-                DeprecatedSettingWarning(old, "SENTRY_OPTIONS['%s']" % new))
-            settings.SENTRY_OPTIONS[new] = getattr(settings, old)
+                DeprecatedSettingWarning(setting_name, "SENTRY_OPTIONS['%s']" % configuration_key))
+            settings.SENTRY_OPTIONS[configuration_key] = getattr(settings, setting_name)
 
     if hasattr(settings, 'SENTRY_REDIS_OPTIONS'):
         if 'redis.clusters' in settings.SENTRY_OPTIONS:
